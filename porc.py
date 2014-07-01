@@ -194,7 +194,7 @@ def smarttrim(data, binw, threshold, step):
     while np.fabs(cdv)>np.fabs(threshold*idv) and (sp-step)>0:
         sp-=step
         cdv=rmsd(data[sp-binw:sp])
-    print "Trimming ", sp/48000.
+    print "Trimming ", sp, " samples"
     return data[sp:]
 
 
@@ -240,7 +240,6 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
         for idata in dataArr:
             maxlen=max(maxlen,len(idata))
         data = np.zeros(maxlen)
-        print maxlen
         for idata in dataArr:
             for sIdx,sample in enumerate(idata):
                 data[sIdx]+=sample/len(dataArr)
