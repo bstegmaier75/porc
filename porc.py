@@ -96,14 +96,29 @@ def dB2Mag(dB):
 # From statsmodels lib
 def mad(a, c=Gaussian.ppf(3/4.), axis=0):  # c \approx .6745
 	a = np.asarray(a)
-	return np.median((np.fabs(a))/c, axis=axis)
+	return np.median((np.fabs(a-np.median(a,0)))/c, axis=axis)
+	
+def mad_sdev(data):
+	return mad(data)/np.std(data)
 
 def identical(arr):
 	return arr[1:] == arr[:-1]
 	
+def makeodd(val):
+	if val%2==0:
+		return val-1
+	else:
+		return val
+		
+# root mean square deviation
+def rmsd(data):
+	return np.sqrt(np.mean(np.power(data,2)))
+	
 #recursive trimming function based on the kurtosis of the data
-# - the function attempts to trim the impulse so that the kurtosis of the first bin is over the threshold)
-# - starting bin width should be set to the hop size of the mixed phase correction
+# - The function attempts to trim the impulse so that the kurtosis of the first bin is over the threshold)
+# - Bin width should be set to the hop size used in mixed phase correction calculation
+# - This method may leave a small number of zero or near-zero samples at the beginning of the impulse, while
+#   still ensuring the non-negativity of the kurtosis of the first bin of width binw
 def ktrim(data, threshold, maxdepth, binw):
 	data = norm(np.real(data))
 	bins=np.int(len(data)/binw)
@@ -115,8 +130,8 @@ def ktrim(data, threshold, maxdepth, binw):
 		if k>threshold:
 			if firstpositive<0:
 				firstpositive=b
-		if k>globalmax[0]:
-			globalmax[0]=k
+		if k>globalmax[0]: #save bin with maximum kurtosis
+			globalmax[0]=k 
 			globalmax[1]=b
 			kvals[b]=k
 			
@@ -127,9 +142,9 @@ def ktrim(data, threshold, maxdepth, binw):
 	if globalmax[1]>0:
 		print "Locating global maximum"
 		maxb = globalmax[1]
-		while maxb>0 and kvals[maxb-1]<kvals[maxb]:
+		while maxb>0 and kvals[maxb-1]<kvals[maxb]: #
 			maxb-=1
-		print "Global max found at sample ", binw*maxb
+		print "Starting recursive search at sample ", binw*maxb
 		offset=maxb*binw
 		
 	return ktrimrec(data[offset:],threshold,maxdepth,binw,binw,binw)
@@ -137,7 +152,6 @@ def ktrim(data, threshold, maxdepth, binw):
 
 def ktrimrec(data,threshold,maxdepth, binw, offset, stepsize):
 	if maxdepth>0:
-		print stepsize
 		data = norm(np.real(data))
 		bins=np.int(len(data)/binw)
 		firstpositive=-1
@@ -146,20 +160,48 @@ def ktrimrec(data,threshold,maxdepth, binw, offset, stepsize):
 			if k>threshold:
 				if firstpositive<0:
 					firstpositive=b
+
 		if firstpositive==0:
-			print "-"
+			print "-: ", offset
 			return ktrimrec(data,threshold,maxdepth-1,binw,offset-stepsize/2, stepsize/2) #start converging on the exact solution
 		elif firstpositive==1:
-			print "+"
+			print "+: ", offset
 			return ktrimrec(data,threshold,maxdepth-1,binw,offset+stepsize/2, stepsize/2) #start converging on the exact solution
 		else:
 			print "Something is not right.. Returning data as-is"
 			return data;
 	else:
-		print "returning at offset ", offset
+		print "Max depth reached, returning at offset ", offset
 		return data[offset:]
 		
-def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthresh, noplot, experimentaltrim):
+
+# smarter trimming algorithm
+# works backwards from the impulse
+# binw - bin width, smaller values increase accuracy but might cause false positives
+# step - iteration step size, in samples. larger values are faster but less accurate
+# threshold - 0.01 seems to work well
+def smarttrim(data, binw, threshold, step):
+	sp = -1
+	gmaxv = -1 #absolute value of global maximum, we assume this is a part of the actual impulse
+	for pos, sample in enumerate(data):
+		if abs(sample)>=gmaxv:
+			sp = pos #start search at global max
+			gmaxv = sample		
+	sp+=np.int(binw/2)
+	idv = rmsd(data[sp-binw:sp])
+	cdv = 1
+	print "InitSp=",sp
+	while np.fabs(cdv)>np.fabs(threshold*idv) and (sp-step)>0:
+		sp-=step
+		cdv=rmsd(data[sp-binw:sp])
+	print "Trimming ", sp/48000.
+	return data[sp:]
+
+
+
+	
+		
+def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthresh, noplot, strim, debug):
 
 
 	data = []
@@ -188,9 +230,10 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 						print 'Trimming ', float(lzs)/float(Fs), ' seconds of silence'
 						dataArr[index]=data[lzs:len(data)] #remove everything before sample at spos
 						break
-		elif experimentaltrim:
+		elif strim:
 			for index,data in enumerate(dataArr):
-				dataArr[index]=ktrim(data,0,200,Fs*0.024);
+				#dataArr[index]=ktrim(data,0,50,Fs*0.024);
+				dataArr[index]=smarttrim(data,Fs*0.024,nsthresh,1)
 			
 		
 		maxlen=0
@@ -218,8 +261,8 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 					print 'Trimming ', float(lzs)/float(Fs), ' seconds of silence'
 					data=data[lzs:len(data)] #remove everything before sample at spos
 					break
-		elif experimentaltrim:
-			data=ktrim(data,0,200,Fs*0.024);
+		elif strim:
+			data=smarttrim(data,Fs*0.024,nsthresh,1)
 		  
 	print "\nSample rate = ", Fs
   
@@ -260,8 +303,19 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 		t = np.loadtxt(target)
 		frq = t[:,0]; pwr = t[:,1]
 		
+		if not frq[0]==0:
+			frq = np.append(np.zeros(1),frq)
+			pwr = np.append(pwr[0],pwr)
+			
+		if debug:
+			print "Target params:"
+			print frq
+			print pwr
 		# calculate the FIR filter via windowing method
-		fir = sig.firwin2(501, frq, np.power(10, pwr/20.0), nyq = frq[-1])	
+		
+		#anlin: added antisymmetric flag to ensure type 1 filter,
+		#       raised numtaps to odd number closest but smaller than len(minresp)
+		fir = sig.firwin2(makeodd(len(minresp)), frq, np.power(10, pwr/20.0), nyq = frq[-1], antisymmetric = False)	
 		# Minimum phase, zero padding	
 		cp, outf = rceps(np.append(fir, np.zeros(len(minresp) - len(fir))))
 			
@@ -305,8 +359,6 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 
 		bins = np.int(np.ceil(len(hp) / samples))
 		
-		print bins
-		
 		tmix = 0
 
 		# Kurtosis method
@@ -320,9 +372,6 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 				break
 		# truncate the prototype function
 		taps = np.int(tmix*Fs)
-		print taps
-		print tmix
-		print Fs
 		
 		print "\nmixing time(secs) = ", tmix, "; taps = ", taps
 	
@@ -340,6 +389,7 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 			# convolve and window to desired length
 			equalizer = conv(equalizer, mixed)
 			equalizer = han * equalizer[:ntaps]
+
 			
 			#data = han * data[:ntaps]
 			#eqresp = np.real(conv(equalizer, data))
@@ -483,18 +533,20 @@ def main():
 						help="Implement mixed-phase compensation. see README for details") 
 	parser.add_argument("-o", dest="opformat", default = 'bin',
 						help="Output file type, default bin optional wav, txt", type=str) 
-	parser.add_argument("-s", dest="nsthresh", default = 0.005,
+	parser.add_argument("-s", dest="nsthresh", default = 0.01,
 						help="Normalized silence threshold. Default = 0.05", type=float) 
 	parser.add_argument('--trim', action='store_true', default = False,
 						help="Trim leading silence")
-	parser.add_argument('--experimentaltrim', action='store_true', default = False,
-						help="Trim leading silence")
+	parser.add_argument('--strim', action='store_true', default = False,
+						help="Experimental smart trim")
 	parser.add_argument('--noplot', action='store_true', default = False,
 						help="Do not polt the filter")
+	parser.add_argument('--debug', action='store_true', default = False,
+						help="Print debug information")
 
 	args = parser.parse_args()
 
-	roomcomp(args.impresp, args.filter, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.nsthresh, args.noplot, args.experimentaltrim)
+	roomcomp(args.impresp, args.filter, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.nsthresh, args.noplot, args.strim, args.debug)
 
 if __name__=="__main__":
 	main()  

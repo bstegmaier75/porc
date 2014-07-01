@@ -1,3 +1,7 @@
+EXPERIMENTAL BRANCH
+===================
+Use at your own peril.
+
 Python Open Room Correction (PORC)
 ==================================
 
