@@ -51,13 +51,16 @@ import numpy as np
 import scipy as sp
 import scipy.io as sio
 import scipy.signal as sig
-from scipy.fftpack import ifft, fft
+from scipy.fftpack import ifft, fft, rfft, irfft
 from scipy.interpolate import pchip
 from scipy.io import wavfile
 from scipy.signal import convolve as conv
-from scipy.stats import kurtosis, nanstd
+from scipy.stats import kurtosis, nanstd, linregress
 from scipy.stats import norm as Gaussian
+from scipy.integrate import cumtrapz
+from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
+import os.path as path
 
 # PORC source files
 from parfiltid import parfiltid
@@ -91,19 +94,138 @@ def norm(y): return y/np.fabs(y).max()
 
 def dB2Mag(dB):
 	return 10**((dB)/20.)
+	
+def Mag2dB(mag):
+	return 20.*np.log10(mag)
  
 # The Median Absolute Deviation along given axis of an array
 # From statsmodels lib
 def mad(a, c=Gaussian.ppf(3/4.), axis=0):  # c \approx .6745
 	a = np.asarray(a)
-	return np.median((np.fabs(a))/c, axis=axis)
+	return np.median((np.fabs(a-np.median(a,0)))/c, axis=axis)
+	
+def mad_sdev(data):
+	return mad(data)/np.std(data)
 
+	
+#check if all values in an array are the same
 def identical(arr):
 	return arr[1:] == arr[:-1]
+
+#return the next odd value less than or equal to val
+def makeodd(val):
+	if val%2==0:
+		return val-1
+	else:
+		return val
+		
+def nrange(stop, num, start=0):
+	if start>stop:
+		tmp=start
+		start=stop
+		stop=tmp
+	return np.unique(np.rint(np.linspace(start,stop,num)))
+	
+#linear to db
+def lintolog(x):
+	return 10**(x/10.)
+#db to linear
+def logtolin(x):
+	return 10.*np.log10(x)
+	
+
+	
+	
+#round down
+def rdn(val,step):
+	return int(float(val)/step)*step
+	
+#calculate RT60 and Schroeder frequency based on data
+def schroeder(data, fs, dbattl=-20, dbattu=-5, samples=20, rvol = 50, rounddown=1, debug=False):
+	rdata2 = data[::-1]**2
+	linsig = logtolin(norm(cumtrapz(rdata2)[::-1]))#schroeder integral of the impulse response
+	if debug:
+		plt.plot(linsig)
+		plt.show()
+		
+	varr=np.linspace(dbattu, dbattl, samples) #attenuation values (in db)
+	tarr=[-1]*samples #times corresponding to values in varr
+
+	#calculate decay times
+	for i,v in enumerate(linsig):
+		for idx in range(samples):
+			if v<varr[idx] and tarr[idx]<0:
+				tarr[idx]=i/float(fs)
+	
+	#perform linear regression analysis on the data
+	slope,ic,r,p,err = linregress(varr,tarr)
+	
+	if debug:
+		print "y:",tarr
+		print "x:",varr
+	
+	#estimate decay time to -60db
+	rt60 = slope*-60+ic
+	#schroeder frequency for a room of volume rvol (m^3)
+	schroeder=2000.*np.sqrt(rt60/rvol)
+	
+	if debug:
+		xx=np.linspace(-5,-60)
+		yy=slope*xx+ic
+		plt.plot(varr,tarr,"go",xx,yy,"r-")
+		plt.show()
+		print "rt60=",rt60
+		print "schroeder=",schroeder
+		print "rounded down to nearest 50Hz: ",rdn(schroeder,50)
+	
+	return rdn(schroeder, rounddown)
+	
+#Davis critical frequency (Don Davis, Eugene Patronis: Sound System Engineering)
+def daviscf(minroomdim):
+	return (3*344)/minroomdim
+	
+def peakoffset(data):
+	max=0
+	offset=0
+	for idx, val in enumerate(data):
+		c = np.fabs(val)
+		if c>max:
+			max=c
+			offset=idx
+	return offset
+	#return 48000
+	
+# align impulse data peaks
+def peakalign(dataArr):
+	offsets = np.zeros(len(dataArr))
+	maxdatalen = 0
+	for idx, data in enumerate(dataArr):
+		offsets[idx] = peakoffset(data)
+		if len(data)>maxdatalen:
+			maxdatalen=len(data)
+	lpad = np.max(offsets)-offsets
+	print lpad
+	print offsets
+	maxdatalen+=max(lpad)
+	print len(dataArr)
+	pdataArr = np.zeros((len(dataArr),maxdatalen))
+	print pdataArr
+	for idx,data in enumerate(dataArr):
+		print "aa",maxdatalen-(len(data)+lpad[idx])
+		lpadz = np.zeros(lpad[idx])
+		rpadz = np.zeros(maxdatalen-(len(data)+lpad[idx]))
+		pdataArr[idx]=np.append(lpadz,np.append(data,rpadz))
+	return pdataArr
+		
+# root mean square deviation
+def rmsd(data):
+	return np.sqrt(np.mean(np.power(data,2)))
 	
 #recursive trimming function based on the kurtosis of the data
-# - the function attempts to trim the impulse so that the kurtosis of the first bin is over the threshold)
-# - starting bin width should be set to the hop size of the mixed phase correction
+# - The function attempts to trim the impulse so that the kurtosis of the first bin is over the threshold)
+# - Bin width should be set to the hop size used in mixed phase correction calculation
+# - This method may leave a small number of zero or near-zero samples at the beginning of the impulse, while
+#   still ensuring the non-negativity of the kurtosis of the first bin of width binw
 def ktrim(data, threshold, maxdepth, binw):
 	data = norm(np.real(data))
 	bins=np.int(len(data)/binw)
@@ -115,8 +237,8 @@ def ktrim(data, threshold, maxdepth, binw):
 		if k>threshold:
 			if firstpositive<0:
 				firstpositive=b
-		if k>globalmax[0]:
-			globalmax[0]=k
+		if k>globalmax[0]: #save bin with maximum kurtosis
+			globalmax[0]=k 
 			globalmax[1]=b
 			kvals[b]=k
 			
@@ -127,9 +249,9 @@ def ktrim(data, threshold, maxdepth, binw):
 	if globalmax[1]>0:
 		print "Locating global maximum"
 		maxb = globalmax[1]
-		while maxb>0 and kvals[maxb-1]<kvals[maxb]:
+		while maxb>0 and kvals[maxb-1]<kvals[maxb]: #
 			maxb-=1
-		print "Global max found at sample ", binw*maxb
+		print "Starting recursive search at sample ", binw*maxb
 		offset=maxb*binw
 		
 	return ktrimrec(data[offset:],threshold,maxdepth,binw,binw,binw)
@@ -137,7 +259,6 @@ def ktrim(data, threshold, maxdepth, binw):
 
 def ktrimrec(data,threshold,maxdepth, binw, offset, stepsize):
 	if maxdepth>0:
-		print stepsize
 		data = norm(np.real(data))
 		bins=np.int(len(data)/binw)
 		firstpositive=-1
@@ -146,28 +267,52 @@ def ktrimrec(data,threshold,maxdepth, binw, offset, stepsize):
 			if k>threshold:
 				if firstpositive<0:
 					firstpositive=b
+
 		if firstpositive==0:
-			print "-"
+			print "-: ", offset
 			return ktrimrec(data,threshold,maxdepth-1,binw,offset-stepsize/2, stepsize/2) #start converging on the exact solution
 		elif firstpositive==1:
-			print "+"
+			print "+: ", offset
 			return ktrimrec(data,threshold,maxdepth-1,binw,offset+stepsize/2, stepsize/2) #start converging on the exact solution
 		else:
 			print "Something is not right.. Returning data as-is"
 			return data;
 	else:
-		print "returning at offset ", offset
+		print "Max depth reached, returning at offset ", offset
 		return data[offset:]
 		
+
+# smarter trimming algorithm
+# works backwards from the impulse
+# binw - bin width, smaller values increase accuracy but might cause false positives
+# step - iteration step size, in samples. larger values are faster but less accurate
+# threshold - 0.01 seems to work well
+def smarttrim(data, binw, threshold, step, Fs=48000.):
+	sp = -1
+	gmaxv = -1 #absolute value of global maximum, we assume this is a part of the actual impulse
+	for pos, sample in enumerate(data):
+		if abs(sample)>=gmaxv:
+			sp = pos #start search at global max
+			gmaxv = sample		
+	sp+=np.int(binw/2)
+	idv = rmsd(data[sp-binw:sp])
+	cdv = 1
+	print "InitSp=",sp
+	while np.fabs(cdv)>np.fabs(threshold*idv) and (sp-step)>0:
+		sp-=step
+		cdv=rmsd(data[sp-binw:sp])
+	print "Trimming ", sp/Fs
+	return data[sp:]
+
+def minphase(data):
+	cp, mp = rceps(data)
+	return mp;
+
+def cnorm(c):
+	maxmag = max(np.abs(c))
+	return c/maxmag
 		
-			
-	
-
-
-	
-def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthresh, noplot, experimentaltrim):
-
-
+def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, trimthreshold, noplot, strim, tfreq, lfpoles, hfpoles, debug):
 	data = []
 	Fs = 0
 	if len(impresps)>1:
@@ -177,36 +322,22 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 		print len(dataArr)
 		for index, impulse in enumerate(impresps):
 			fsArr[index], dataArr[index] = wavfile.read(impulse)
-			dataArr[index] = norm(np.hstack(dataArr[index]))
 		if not identical(fsArr):
 			print 'Sample rate mismatch'
 			return
 		Fs = fsArr[0]
-		
-		if trim:
-			for index,data in enumerate(dataArr):
-				print "Removing leading silence from impulse ", index+1, " of ", len(dataArr)
-				for spos,sval in enumerate(data):
-					if abs(sval)>nsthresh:
-						lzs=max(spos-1,0)
-						ld =len(data)
-						print 'Impulse starts at position ', spos, '/', len(data)
-						print 'Trimming ', float(lzs)/float(Fs), ' seconds of silence'
-						dataArr[index]=data[lzs:len(data)] #remove everything before sample at spos
-						break
-		elif experimentaltrim:
-			for index,data in enumerate(dataArr):
-				dataArr[index]=ktrim(data,0,200,Fs*0.024);
-			
-		
-		maxlen=0
-		for idata in dataArr:
-			maxlen=max(maxlen,len(idata))
-		data = np.zeros(maxlen)
-		print maxlen
-		for idata in dataArr:
-			for sIdx,sample in enumerate(idata):
-				data[sIdx]+=sample/len(dataArr)
+		################################
+		# Average impulse responses
+		################################
+		maxlen = -1
+		for impulse in dataArr:
+			maxlen=max(maxlen,len(impulse))
+		ftimpulses = [None] * len(dataArr)
+		for idx,impulse in enumerate(dataArr):
+			ftimpulses[idx] = logtolin(fft(dataArr[idx],maxlen))
+		ftavg = np.mean(ftimpulses,0)
+		data=norm(np.real(ifft(lintolog(ftavg))))
+		print "using averaged data"
 	else:
 		print "Loading impulse response"
 		# Read impulse response
@@ -214,18 +345,20 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 		data = norm(np.hstack(data))
 
 
-		if trim:
-			print "Removing leading silence"
-			for spos,sval in enumerate(data):
-				if abs(sval)>nsthresh:
-					lzs=max(spos-1,0)
-					ld =len(data)
-					print 'Impulse starts at position ', spos, '/', len(data)
-					print 'Trimming ', float(lzs)/float(Fs), ' seconds of silence'
-					data=data[lzs:len(data)] #remove everything before sample at spos
-					break
-		elif experimentaltrim:
-			data=ktrim(data,0,200,Fs*0.024);
+	if trim:
+		print "Removing leading silence"
+		for spos,sval in enumerate(data):
+			if abs(sval)>trimthreshold:
+				lzs=max(spos-1,0)
+				ld =len(data)
+				print 'Impulse starts at position ', spos, '/', len(data)
+				print 'Trimming ', float(lzs)/float(Fs), ' seconds of silence'
+				data=data[lzs:len(data)] #remove everything before sample at spos
+				break
+	elif strim:
+		data=smarttrim(data,Fs*0.024,trimthreshold,1)
+			
+	print schroeder(data,Fs,rvol=30, debug=debug)
 		  
 	print "\nSample rate = ", Fs
   
@@ -235,8 +368,9 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 	## Logarithmic pole positioning
 	###
 
-	fplog = np.hstack((sp.logspace(sp.log10(20.), sp.log10(200.), 14.), sp.logspace(sp.log10(250.), 
-			sp.log10(20000.), 13.))) 
+	fplog = np.hstack((sp.logspace(sp.log10(20.), sp.log10(float(tfreq-25)), float(lfpoles)), sp.logspace(sp.log10(float(tfreq+25)), 
+			sp.log10(20000.), float(hfpoles))))
+	#fplog = sp.logspace(sp.log10(20.), sp.log10(300.), 112.)
 	plog = freqpoles(fplog, Fs)
 
 	###
@@ -266,10 +400,23 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 		t = np.loadtxt(target)
 		frq = t[:,0]; pwr = t[:,1]
 		
+		if not frq[0]==0:
+			frq = np.append(np.zeros(1),frq)
+			pwr = np.append(pwr[0],pwr)
+			
+		if debug:
+			print "Target params:"
+			print frq
+			print pwr
+		
 		# calculate the FIR filter via windowing method
-		fir = sig.firwin2(501, frq, np.power(10, pwr/20.0), nyq = frq[-1])	
+		
+		#anlin: added antisymmetric flag to ensure type 1 filter,
+		#       raised numtaps to odd number closest but smaller than len(minresp)
+		fir = sig.firwin2(makeodd(len(minresp)), frq, np.power(10, pwr/20.0), nyq = frq[-1], antisymmetric = False)	
 		# Minimum phase, zero padding	
 		cp, outf = rceps(np.append(fir, np.zeros(len(minresp) - len(fir))))
+		
 			
 	###
 	## Filter design
@@ -311,8 +458,6 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 
 		bins = np.int(np.ceil(len(hp) / samples))
 		
-		print bins
-		
 		tmix = 0
 
 		# Kurtosis method
@@ -326,9 +471,6 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 				break
 		# truncate the prototype function
 		taps = np.int(tmix*Fs)
-		print taps
-		print tmix
-		print Fs
 		
 		print "\nmixing time(secs) = ", tmix, "; taps = ", taps
 	
@@ -346,11 +488,14 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, nsthr
 			# convolve and window to desired length
 			equalizer = conv(equalizer, mixed)
 			equalizer = han * equalizer[:ntaps]
+
 			
 			#data = han * data[:ntaps]
 			#eqresp = np.real(conv(equalizer, data))
 		else:
 			print "zero taps; skipping mixed-phase computation"
+			
+		
 	if opformat in ('wav', 'wav24'):
 		# Write data
 		wavwrite_24(filter, Fs, norm(np.real(equalizer)))
@@ -489,18 +634,28 @@ def main():
 						help="Implement mixed-phase compensation. see README for details") 
 	parser.add_argument("-o", dest="opformat", default = 'bin',
 						help="Output file type, default bin optional wav, txt", type=str) 
-	parser.add_argument("-s", dest="nsthresh", default = 0.005,
+	parser.add_argument("--lfpoles", dest="lfpoles", default = 14,
+						help="Number of low frequency band poles (20Hz->tfreq)", type=int) 
+	parser.add_argument("--hfpoles", dest="hfpoles", default = 13,
+						help="Number of high frequency band poles (lfcutoff->20kHz), zero to disable HF correction", type=int) 
+	parser.add_argument("--tfreq", dest="tfreq", default = 200,
+						help="Transition freq. from low to high frequency band", type=int) 
+	parser.add_argument("-s", dest="trimthreshold", default = 0.05,
 						help="Normalized silence threshold. Default = 0.05", type=float) 
 	parser.add_argument('--trim', action='store_true', default = False,
 						help="Trim leading silence")
-	parser.add_argument('--experimentaltrim', action='store_true', default = False,
-						help="Trim leading silence")
+	parser.add_argument('--strim', action='store_true', default = False,
+						help="Experimental smart trim")
 	parser.add_argument('--noplot', action='store_true', default = False,
 						help="Do not polt the filter")
+	parser.add_argument('--debug', action='store_true', default = False,
+						help="Print debug information")
 
 	args = parser.parse_args()
+	
+	
 
-	roomcomp(args.impresp, args.filter, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.nsthresh, args.noplot, args.experimentaltrim)
+	roomcomp(args.impresp, args.filter, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.trimthreshold, args.noplot, args.strim, args.tfreq, args.lfpoles, args.hfpoles, args.debug)
 
 if __name__=="__main__":
 	main()  
