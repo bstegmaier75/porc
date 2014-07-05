@@ -289,7 +289,7 @@ def ktrimrec(data,threshold,maxdepth, binw, offset, stepsize):
 # binw - bin width, smaller values increase accuracy but might cause false positives
 # step - iteration step size, in samples. larger values are faster but less accurate
 # threshold - 0.01 seems to work well
-def smarttrim(data, binw, threshold, step, Fs=48000.):
+def smarttrim(data, binw, threshold, step, Fs=48000., debug=False):
 	sp = -1
 	gmaxv = -1 #absolute value of global maximum, we assume this is a part of the actual impulse
 	for pos, sample in enumerate(data):
@@ -299,11 +299,12 @@ def smarttrim(data, binw, threshold, step, Fs=48000.):
 	sp+=np.int(binw/2)
 	idv = rmsd(data[sp-binw:sp])
 	cdv = 1
-	print "InitSp=",sp
+	#print "InitSp=",sp
 	while np.fabs(cdv)>np.fabs(threshold*idv) and (sp-step)>0:
 		sp-=step
 		cdv=rmsd(data[sp-binw:sp])
-	print "Trimming ", sp/Fs
+	if debug:
+		print "Trimming ", sp/Fs
 	return data[sp:]
 
 def minphase(data):
@@ -318,19 +319,20 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, trimt
 	data = []
 	Fs = 0
 	if len(impresps)>1:
-		print "Averaging ", len(impresps), " impulses"
+		if debug:
+			print "Averaging ", len(impresps), " impulses"
 		fsArr = [None] * len(impresps)
 		dataArr = [None] * len(impresps)
-		print len(dataArr)
+		#print len(dataArr)
 		for index, impulse in enumerate(impresps):
 			fsArr[index], dataArr[index] = wavfile.read(impulse)
 		if not identical(fsArr):
 			print 'Sample rate mismatch'
 			return
 		Fs = fsArr[0]
-		################################
+		###########################
 		# Average impulse responses
-		################################
+		###########################
 		maxlen = -1
 		for impulse in dataArr:
 			maxlen=max(maxlen,len(impulse))
@@ -339,14 +341,14 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, trimt
 			ftimpulses[idx] = logtolin(fft(dataArr[idx],maxlen))
 		ftavg = np.mean(ftimpulses,0)
 		data=norm(np.real(ifft(lintolog(ftavg))))
-		print "using averaged data"
+		#print "using averaged data"
 	else:
 		print "Loading impulse response"
 		# Read impulse response
 		Fs, data = wavfile.read(impresps[0])
 		data = norm(np.hstack(data))
 
-
+	
 	if trim:
 		print "Removing leading silence"
 		for spos,sval in enumerate(data):
@@ -359,10 +361,10 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, trimt
 				break
 	elif strim:
 		data=smarttrim(data,Fs*0.024,trimthreshold,1)
-			
-	print schroeder(data,Fs,rvol=30, debug=debug)
-		  
-	print "\nSample rate = ", Fs
+	
+	if(debug):
+		print "Schroeder freq (assuming 30m^3 room): ",schroeder(data,Fs,rvol=30, debug=debug)  
+		print "\nSample rate = ", Fs
   
 	print "\nGenerating correction filter"
 
@@ -504,7 +506,6 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, trimt
 		print '\nOutput format is wav24'
 		print 'Output filter length =', len(equalizer), 'taps'
 		print 'Output filter written to ' + filter
-	
 		print "\nUse sox to convert output .wav to raw 32 bit IEEE floating point if necessary,"
 		print "or to merge left and right channels into a stereo .wav"
 		print "\nExample: sox leq48.wav -t f32 leq48.bin"
@@ -624,8 +625,8 @@ def main():
 	parser = argparse.ArgumentParser(description = mtxt, epilog=bye, formatter_class=RawTextHelpFormatter)
 
 	# Positionals
-	parser.add_argument('impresp', metavar='I', type=str, nargs="+", help='mesaured impulse response')
-	parser.add_argument('filter', metavar='F', type=str, help='output filter file name')
+	parser.add_argument('impresp', metavar='I', type=str, nargs="+", help='Mesaured impulse response. Can be a file, a list of files or a folder')
+	parser.add_argument('filter', metavar='F', type=str, help='Output filter path and filename (or common prefix) without extension')
 
 	# Options
 	parser.add_argument("-t", dest="target", default='flat',
@@ -637,39 +638,49 @@ def main():
 	parser.add_argument("-o", dest="opformat", default = 'bin',
 						help="Output file type, default bin optional wav, txt", type=str) 
 	parser.add_argument("--lfpoles", dest="lfpoles", default = 14,
-						help="Number of low frequency band poles (20Hz->tfreq)", type=int) 
+						help="Number of low frequency band poles (20Hz->tfreq). Default=14", type=int) 
 	parser.add_argument("--hfpoles", dest="hfpoles", default = 13,
-						help="Number of high frequency band poles (lfcutoff->20kHz), zero to disable HF correction", type=int) 
+						help="Number of high frequency band poles (tfreq->20kHz). Default=13, zero to disable HF correction", type=int) 
 	parser.add_argument("--tfreq", dest="tfreq", default = 200,
-						help="Transition freq. from low to high frequency band", type=int) 
+						help="LF to HF band transition freq.", type=int) 
 	parser.add_argument("-s", dest="trimthreshold", default = 0.05,
 						help="Normalized silence threshold. Default = 0.05", type=float) 
 	parser.add_argument('--trim', action='store_true', default = False,
 						help="Trim leading silence")
 	parser.add_argument('--strim', action='store_true', default = False,
-						help="Experimental smart trim")
+						help="Smart trim (experimental)")
 	parser.add_argument('--noplot', action='store_true', default = False,
-						help="Do not polt the filter")
+						help="Do not open a plot window")
 	parser.add_argument('--debug', action='store_true', default = False,
 						help="Print debug information")
 
 	args = parser.parse_args()
 	
-	impulses = args.impresp
 	
-	if len(impulses)>1 and not isinstance(impulses,basestring):
-		for impulse in impulses:
+	
+
+	
+	
+	ext = args.opformat[:3] # this won't work with extensions over 3 characters, the if-elif block below is for redundancy
+	print ext
+	if args.opformat=="wav" or args.opformat=="wav32" or args.opformat=="wav24":
+		ext="wav"
+	elif args.opformat=="bin":
+		ext="bin"
+	
+	if len(args.impresp)>1 and not isinstance(args.impresp,basestring):
+		for impulse in args.impresp:
 			if not isfile(impulse):
 				print "Invalid input"
-	elif isdir(impulses[0]):
-		
-		lfile,lname = fgrp(abspath(impulses[0]))
+				print "Valid inputs are folders, individual files and space separated lists of files"
+	elif isdir(args.impresp[0]):
+		lfile,lname = fgrp(abspath(args.impresp[0]))
 		for idx in range(len(lfile)):
-			roomcomp(lfile[idx], lname[idx]+".bin", args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.trimthreshold, args.noplot, args.strim, args.tfreq, args.lfpoles, args.hfpoles, args.debug)
+			roomcomp(lfile[idx], args.filter+lname[idx]+"."+ext, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.trimthreshold, args.noplot, args.strim, args.tfreq, args.lfpoles, args.hfpoles, args.debug)
 		return
 	
 
-	roomcomp(args.impresp, args.filter, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.trimthreshold, args.noplot, args.strim, args.tfreq, args.lfpoles, args.hfpoles, args.debug)
+	roomcomp(args.impresp, args.filter+"."+ext, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.trimthreshold, args.noplot, args.strim, args.tfreq, args.lfpoles, args.hfpoles, args.debug)
 
 if __name__=="__main__":
 	main()  

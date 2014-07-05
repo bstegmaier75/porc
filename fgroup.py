@@ -52,7 +52,9 @@ def fgrp(pth=None, debug=False):
 			wavs.append((fpath,fname(fpath)))
 			fnames.append(fname(fpath))
 	
-	outNames= rec_pickgroups(rec_mergedown(rec_divide(fnames,0),0))
+	outNames= rec_divide(fnames,0)
+	print rec_pickgroups(rec_mergedown(outNames,1))
+	outNames=rec_pickgroups(rec_mergedown(outNames,1))
 	outPaths=outNames
 	for pth,fn in wavs:
 		print "Including wave file ",fn," (",pth,")"
@@ -62,6 +64,8 @@ def fgrp(pth=None, debug=False):
 	
 	for idx,arr in enumerate(outNames):
 		outNames[idx]=commonprefix(arr)
+		
+	print "Found groups ",outNames
 	
 	return outPaths, outNames
 	
@@ -78,17 +82,16 @@ def rec_divide(inputArr,depth=0):
 		else:
 			skipped+=1		
 	searchArr=unique(searchArr)
-	if len(searchArr)==len(inputArr)-skipped:
-		return inputArr #everything at this depth is unique already, return
+	if len(searchArr)==len(inputArr)-skipped and skipped>0:
+			#print inputArr,skipped #returning here
+			return inputArr #everything at this depth is unique already, return
 	outArr=[]
-	for idx,uq in enumerate(searchArr):
+	for uq in searchArr:
 		dArr = []
 		for input in inputArr:
 			if(len(input)>depth) and input[depth]==uq:
 				dArr.append(input)
-		outArr.append(dArr)
-	for idx,arr in enumerate(outArr):
-		outArr[idx]=rec_divide(arr,depth+1)
+		outArr.append(rec_divide(dArr, depth+1))
 	return outArr
 
 def rec_replace(inputArr, original, replacement):
@@ -154,7 +157,7 @@ def rec_pickgroups(inArr):
 		strArr = []
 		for arr in inArr:
 			if not isinstance(arr,basestring):
-				outArr.extend(rec_pickGroups(arr))
+				outArr.extend(rec_pickgroups(arr))
 			else:
 				#for item in arr:
 				#	if isinstance(item,basestring):
@@ -222,7 +225,7 @@ def rec_flatten(inArr):
 	
 #def main():
 #	fpath=getargs()[0]
-#	print fgrp()
+#	print fgrp(fpath)
 	
 
 #if __name__=="__main__":
