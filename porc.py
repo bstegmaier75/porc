@@ -128,12 +128,7 @@ def nrange(stop, num, start=0):
 		stop=tmp
 	return np.unique(np.rint(np.linspace(start,stop,num)))
 	
-#linear to db
-def lintolog(x):
-	return 10**(x/10.)
-#db to linear
-def logtolin(x):
-	return 10.*np.log10(x)
+
 	
 
 	
@@ -314,6 +309,14 @@ def minphase(data):
 def cnorm(c):
 	maxmag = max(np.abs(c))
 	return c/maxmag
+	
+	
+#linear to db
+def lintolog(x):
+	return 10**(x/10.)
+#db to linear
+def logtolin(x):
+	return 10.*np.log10(x)
 		
 def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, trimthreshold, noplot, strim, tfreq, lfpoles, hfpoles, debug):
 	data = []
@@ -334,21 +337,20 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, trimt
 		# Average impulse responses
 		###########################
 		maxlen = -1
+
 		for impulse in dataArr:
 			maxlen=max(maxlen,len(impulse))
 		ftimpulses = [None] * len(dataArr)
 		for idx,impulse in enumerate(dataArr):
 			ftimpulses[idx] = logtolin(fft(dataArr[idx],maxlen))
 		ftavg = np.mean(ftimpulses,0)
-		data=norm(np.real(ifft(lintolog(ftavg))))
-		#print "using averaged data"
+		data=norm(minphase(ifft(lintolog(ftavg))))
 	else:
 		print "Loading impulse response"
 		# Read impulse response
 		Fs, data = wavfile.read(impresps[0])
 		data = norm(np.hstack(data))
 
-	
 	if trim:
 		print "Removing leading silence"
 		for spos,sval in enumerate(data):
@@ -374,7 +376,6 @@ def roomcomp(impresps, filter, target, ntaps, mixed_phase, opformat, trim, trimt
 
 	fplog = np.hstack((sp.logspace(sp.log10(20.), sp.log10(float(tfreq-25)), float(lfpoles)), sp.logspace(sp.log10(float(tfreq+25)), 
 			sp.log10(20000.), float(hfpoles))))
-	#fplog = sp.logspace(sp.log10(20.), sp.log10(300.), 112.)
 	plog = freqpoles(fplog, Fs)
 
 	###
@@ -676,6 +677,7 @@ def main():
 	elif isdir(args.impresp[0]):
 		lfile,lname = fgrp(abspath(args.impresp[0]))
 		for idx in range(len(lfile)):
+			print lfile[idx]
 			roomcomp(lfile[idx], args.filter+lname[idx]+"."+ext, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.trimthreshold, args.noplot, args.strim, args.tfreq, args.lfpoles, args.hfpoles, args.debug)
 		return
 	
