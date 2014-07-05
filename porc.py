@@ -61,11 +61,13 @@ from scipy.integrate import cumtrapz
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import os.path as path
+from os.path import isfile, isdir, abspath, commonprefix
 
 # PORC source files
 from parfiltid import parfiltid
 from tfplot import tfplot, tfplots, debug_log_plot
 from freqpoles import freqpoles
+from fgroup import fgrp
 
 # Ignore warnings
 import warnings; warnings.filterwarnings('ignore')
@@ -653,6 +655,18 @@ def main():
 
 	args = parser.parse_args()
 	
+	impulses = args.impresp
+	
+	if len(impulses)>1 and not isinstance(impulses,basestring):
+		for impulse in impulses:
+			if not isfile(impulse):
+				print "Invalid input"
+	elif isdir(impulses[0]):
+		
+		lfile,lname = fgrp(abspath(impulses[0]))
+		for idx in range(len(lfile)):
+			roomcomp(lfile[idx], lname[idx]+".bin", args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.trimthreshold, args.noplot, args.strim, args.tfreq, args.lfpoles, args.hfpoles, args.debug)
+		return
 	
 
 	roomcomp(args.impresp, args.filter, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.trimthreshold, args.noplot, args.strim, args.tfreq, args.lfpoles, args.hfpoles, args.debug)

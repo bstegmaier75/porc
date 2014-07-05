@@ -1,14 +1,14 @@
 import os
 from os import path, listdir, access, getcwd
-from os.path import isfile, isdir, normpath, basename, splitext
+from os.path import isfile, isdir, normpath, basename, splitext, commonprefix
 import sys
 import numpy as np
 
-def getargs():
-	if len(sys.argv)>1:
-		return sys.argv[1:]
-	else:
-		return [getcwd()]
+#def getargs():
+#	if len(sys.argv)>1:
+#		return sys.argv[1:]
+#	else:
+#		return [getcwd()]
 def hasriffhead(path):
 	f=open(path,"rt")
 	ascii4c = f.read(4)
@@ -36,13 +36,18 @@ def fgrp(pth, debug=False):
 			wavs.append((fpath,fname(fpath)))
 			fnames.append(fname(fpath))
 	
-	outArr = rec_divide(fnames,0)
-	
+	outNames = rec_divide(fnames,0)
+	outPaths=outNames
 	for pth,fn in wavs:
-		#print "fn: ",fn," , fpath: ",pth
-		outArr = rec_replace(outArr,fn,pth)
+		print "fn: ",fn," , fpath: ",pth
+		outPaths = rec_replace(outPaths,fn,pth)
 	
-	return outArr
+	
+	
+	for idx,arr in enumerate(outNames):
+		outNames[idx]=commonprefix(arr)
+	
+	return outPaths, outNames
 	
 	
 	return wavs
@@ -52,18 +57,18 @@ def rec_divide(inputArr,depth=0):
 	searchArr = []
 	skipped=0
 	for input in inputArr:
-		if(len(input)>depth): #>= ??
+		if(len(input)>depth):
 			searchArr.append(input[depth])
 		else:
 			skipped+=1		
 	searchArr=unique(searchArr)
 	if len(searchArr)==len(inputArr)-skipped:
 		return inputArr #everything at this depth is unique already, return
-	outArr=[] #staggered array
+	outArr=[]
 	for idx,uq in enumerate(searchArr):
 		dArr = []
 		for input in inputArr:
-			if(len(input)>depth) and input[depth]==uq: #>= ??
+			if(len(input)>depth) and input[depth]==uq:
 				dArr.append(input)
 		outArr.append(dArr)
 	for idx,arr in enumerate(outArr):
@@ -107,11 +112,11 @@ def rec_replace(inputArr, original, replacement):
 	return outputArr
 
 	
-def main():
-	fpath=getargs()[0]
-	print fgrp(fpath)
+#def main():
+#	fpath=getargs()[0]
+#	print fgrp(fpath)
 	
 
-if __name__=="__main__":
-	main()
+#if __name__=="__main__":
+#	main()
 
