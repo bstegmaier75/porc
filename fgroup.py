@@ -29,12 +29,10 @@ def fname(path):
 # outPaths = [["C:\l1.wav", "C:\l2.wav"], ["C:\r1.wav", "C:\r2.wav"]]
 # outNames = ["l", "r"]
 #
-#  NOT FULLY FUNCTIONAL!!
-#  ARRAYS CREATED BY rec_divide NEED TO BE SPLIT BASED
-#  ON THE LENGTH OF THE COMMON PREFIX BEFORE FLATTENING!!
-#
 ############################################################
-def fgrp(pth, debug=False):
+def fgrp(pth=None, debug=False):
+	if pth==None:
+		pth=getcwd()
 	pth=normpath(pth)
 	if not isdir(pth):
 		print "Not a path!"
@@ -54,10 +52,10 @@ def fgrp(pth, debug=False):
 			wavs.append((fpath,fname(fpath)))
 			fnames.append(fname(fpath))
 	
-	outNames = rec_divide(fnames,0)
+	outNames= rec_pickgroups(rec_mergedown(rec_divide(fnames,0),0))
 	outPaths=outNames
 	for pth,fn in wavs:
-		print "fn: ",fn," , fpath: ",pth
+		print "Including wave file ",fn," (",pth,")"
 		outPaths = rec_replace(outPaths,fn,pth)
 	
 	
@@ -91,28 +89,8 @@ def rec_divide(inputArr,depth=0):
 		outArr.append(dArr)
 	for idx,arr in enumerate(outArr):
 		outArr[idx]=rec_divide(arr,depth+1)
-	return rec_dflatten(outArr,1)
-#flatten to a set depth
-def rec_dflatten(inArr, maxdepth=1):
-	outArr=[]
-	if(maxdepth==0):
-		return rec_flatten(inArr)
-	for arr in inArr:
-		if not isinstance(arr,basestring):
-			outArr.append(rec_dflatten(arr,maxdepth-1))
-		else:
-			outArr.append(rec_flatten(arr))
 	return outArr
-def rec_flatten(inArr):
-	outArr = []
-	if len(inArr)>0 and not isinstance(inArr,basestring):
-		for arr in inArr:
-			if isinstance(arr, basestring):
-				outArr.append(arr)
-			else:
-				outArr.extend(rec_flatten(arr))
-		return outArr
-	return inArr
+
 def rec_replace(inputArr, original, replacement):
 	if isinstance(inputArr, basestring):
 		if inputArr==original:
@@ -129,10 +107,122 @@ def rec_replace(inputArr, original, replacement):
 			outputArr.append(rec_replace(arr,original,replacement))
 	return outputArr
 
+def rec_mergeup(inArr, levels):
+	if not isinstance(inArr, basestring):
+		itArr=inArr
+		for i in range(levels):
+			outArr=[]
+			if len(itArr)>0:
+				iArr=[]
+				for arr in itArr:
+					if isinstance(arr,basestring):
+						outArr.append(arr)
+					else:
+						if hasStrs(arr):
+							iArr.extend(arr)
+						else:
+							iArr.append(rec_mergeup(arr,1))
+				outArr.extend(iArr)
+			itArr=outArr
+		return itArr
+	else:
+		return inArr
+		
+def rec_mergedown(inArr, levels):
+	if not isinstance(inArr, basestring):
+		itArr=inArr
+		for i in range(levels):
+			outArr=[]
+			if len(itArr)>0:
+				iArr=[]
+				for arr in itArr:
+					if isinstance(arr,basestring):
+						iArr.append(arr)
+					else:
+						if onlyStrs(arr):
+							iArr.extend(arr)
+						else:
+							iArr.append(rec_mergedown(arr,1))
+				outArr.extend(iArr)
+			itArr=outArr
+		return itArr
+	else:
+		return inArr
+def rec_pickgroups(inArr):
+	outArr=[]
+	if len(inArr)>0 and not isinstance(inArr,basestring):
+		strArr = []
+		for arr in inArr:
+			if not isinstance(arr,basestring):
+				outArr.extend(rec_pickGroups(arr))
+			else:
+				#for item in arr:
+				#	if isinstance(item,basestring):
+				strArr.append(arr)
+		if len(strArr)>0:
+			outArr.append(strArr)
+	else:
+		return inArr
+	return outArr
+def hasStrs(arr):
+	if len(arr)>0:
+		for a in arr:
+			if len(a)>0 and isinstance(a,basestring):
+				return True
+	return False
+def onlyStrs(arr):
+	if len(arr)>0:
+		for a in arr:
+			if len(a)>0 and not isinstance(a,basestring):
+				return False
+	return True
+	
+	
+#BEGIN OBSOLETE----------------------------------
+def rec_split(inArr):
+	vlen = 0
+	outArr = []
+	if len(inArr)>1: #two or more subarrays
+		vlen=len(inArr[0])
+		for arr in inArr:
+			if not len(arr)==vlen or isinstance(arr,basestring):
+				outArr.append(arr)
+			else:
+				outArr.extend(rec_split(arr))
+	elif len(inArr)==1 and not isinstance(inArr,basestring):
+		return rec_split(inArr)
+	else:
+		return inArr
+	return outArr
+	
+#flatten to a set depth
+def rec_dflatten(inArr, maxdepth=1):
+	outArr=[]
+	if(maxdepth==0):
+		return rec_flatten(inArr)
+	for arr in inArr:
+		if not isinstance(arr,basestring):
+			outArr.append(rec_dflatten(arr,maxdepth-1))
+		else:
+			outArr.append(rec_flatten(arr))
+	return outArr
+
+#flatten
+def rec_flatten(inArr):
+	outArr = []
+	if len(inArr)>0 and not isinstance(inArr,basestring):
+		for arr in inArr:
+			if isinstance(arr, basestring):
+				outArr.append(arr)
+			else:
+				outArr.extend(rec_flatten(arr))
+		return outArr
+	return inArr
+#END OBSOLETE-----------------------------------
 	
 #def main():
 #	fpath=getargs()[0]
-#	print fgrp(fpath)
+#	print fgrp()
 	
 
 #if __name__=="__main__":
