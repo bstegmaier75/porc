@@ -16,6 +16,24 @@ def hasriffhead(path):
 	
 def fname(path):
 	return splitext(basename(path))[0]
+	
+############################################################
+# Group wave audio files by common prefix
+#
+# - returns two lists: outPaths and outNames
+# - outPaths is a list of groups of paths to files with
+#   similar prefixes
+# - outNames is a list of the prefixes for file groups in
+#   outPaths
+#
+# outPaths = [["C:\l1.wav", "C:\l2.wav"], ["C:\r1.wav", "C:\r2.wav"]]
+# outNames = ["l", "r"]
+#
+#  NOT FULLY FUNCTIONAL!!
+#  ARRAYS CREATED BY rec_divide NEED TO BE SPLIT BASED
+#  ON THE LENGTH OF THE COMMON PREFIX BEFORE FLATTENING!!
+#
+############################################################
 def fgrp(pth, debug=False):
 	pth=normpath(pth)
 	if not isdir(pth):
