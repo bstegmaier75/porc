@@ -364,7 +364,7 @@ def main():
 	Example:
 	./porc -t b&k.txt -n 8000 l48.wav leq48.bin
 		
-	See the README for detailed instructions
+	See the README for detailed instructions.
 	''')
 
 	import argparse
@@ -373,26 +373,26 @@ def main():
 	parser = argparse.ArgumentParser(description = mtxt, epilog=bye, formatter_class=RawTextHelpFormatter)  
 
 	# Positionals
-	parser.add_argument('impresp', metavar='I', type=str, help='mesaured impulse response')
+	parser.add_argument('impresp', metavar='I', type=str, help='measured impulse response')
 	parser.add_argument('filter', metavar='F', type=str, help='output filter file name')
 
 	# Options
 	parser.add_argument("-t", dest="target", default='flat',
 					  help="target curve", metavar="FILE")
 	parser.add_argument("-n", dest="ntaps", default = 6144,
-					  help="filter length, in taps. Default = len(input)", type=int)
-	parser.add_argument('--mixed', action='store_true', default = False,
-					  help="Implement mixed-phase compensation. see README for details") 
+					  help="filter length, in taps [default = 6144]", type=int)
+	parser.add_argument('--mixed', action='store_true',
+					  help="implement mixed-phase compensation, see README for details") 
 	parser.add_argument("-o", dest="opformat", default = 'bin',
-					help="Output file type, default bin optional wav", type=str)   
+					help="output file type: wav/wav24, wav32, bin [default = bin]", type=str)   
 	parser.add_argument("-s", dest="nsthresh", default = 0.005,
-					help="Normalized silence threshold. Default = 0.05", type=float)                    
-	parser.add_argument('--trim', action='store_true', default = False,
-					help="Trim leading silence")
-	parser.add_argument('--noplot', action='store_true', default = False,
-					help="Do not polt the filter") 	 					  
+					help="normalized silence threshold [default = 0.05]", type=float)                    
+	parser.add_argument('--trim', action='store_true',
+					help="trim leading silence")
+	parser.add_argument('--noplot', action='store_true',
+					help="do not plot the filter") 	 					  
 	parser.add_argument('--nologint', action='store_true', 
-					help="Don't use logarithmic interpolation for target curve") 	 					  
+					help="do not use logarithmic interpolation for target curve") 	 					  
 
 	args = parser.parse_args()
 
