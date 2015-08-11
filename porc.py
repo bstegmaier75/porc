@@ -288,6 +288,8 @@ def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthre
     tfplot(equalizedresp*0.01, Fs, avg = 'abs')
     # 1/3 Octave smoothed
     tfplots(equalizedresp*0.01, Fs, 'r')
+    # target
+    tfplot(outf*0.01, Fs, color='g')
 
     # Add labels
     # May need to reposition these based on input data
