@@ -59,14 +59,20 @@ Target Response
 ===============
 
 The default target curve for PORC is flat. Included in the data directory are a number 
-of target curves. Experiment to suit your listening preferences. Use the [-t] flag to load a target
-file.
+of target curves. Experiment to suit your listening preferences. Use the [-t] flag to load 
+a target curve file.
 
-One may also target a flat curve, and then use separate parametric equalization for bass boosting
-and other pschoaccoustic preferences. 
+Per default the target curve is interpolated using logarithmic interpolation. 
+E.g., two data points 1000/0.0 and 10000/-6.0 will produce a straight rolloff of 6dB from 
+1000Hz to 10kHz in a bode plot.
+Logarithmic interpolation can be disabled using the --nologint flag.
+Target curves do not have to include an entry for 0Hz and Fs/2. 
 
-For further reference, the B&K House Curve is a good place to start. Read "Relevant loudspeaker 
-tests in studios in Hi-Fi dealers' demo rooms in the home etc.," Figure 5:
+One may also target a flat curve, and then use separate parametric equalization for bass 
+boosting and other pschoaccoustic preferences. 
+
+For further reference, the B&K House Curve is a good place to start. Read "Relevant 
+loudspeaker tests in studios in Hi-Fi dealers' demo rooms in the home etc.," Figure 5:
 http://www.bksv.com/doc/17-197.pdf
 
 Mixed-Phase Compensation

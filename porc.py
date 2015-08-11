@@ -98,7 +98,8 @@ def mad(a, c=Gaussian.ppf(3/4.), axis=0):  # c \approx .6745
     a = np.asarray(a)
     return np.median((np.fabs(a))/c, axis=axis)
     
-def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthresh, noplot):
+def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthresh, noplot,
+             nologint):
 
   print "Loading impulse response"
   
@@ -146,36 +147,43 @@ def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthre
   db = []
 
   if target is 'flat':
-    
     # Make the target output a bandpass filter
     Bf, Af = sig.butter(4, 30/(Fs/2), 'high')
     outf = sig.lfilter(Bf, Af, imp) 
-    
   else:
-    
     # load target file
     t = np.loadtxt(target)
     frq = t[:,0]
-    pwr = np.power(10, t[:,1]/20.0)
+    pwr = t[:,1]
     
-    # add zero and Fs/2 frequencies if not yet contained in the target curve
-    if frq[0] != 0.0:
-      # add (0Hz, 0.0)
-      frq = np.insert(frq, 0, 0.0)
-      pwr = np.insert(pwr, 0, 0.0)
+    # remove 0Hz and Fs/2 possibly contained in target curve (only for compatibility to 
+    # old target curves)
+    if frq[0] == 0.0:
+      frq = np.delete(frq, 0)
+      pwr = np.delete(pwr, 0)
+    if frq[-1] == Fs/2:
+      frq = np.delete(frq, -1)
+      pwr = np.delete(pwr, -1)
+      
+    # logarithmic interpolation of target curve using ntaps frequency values
+    if not nologint:
+      tfrq = np.arange(np.amin(frq), np.amax(frq), (np.amax(frq)-np.amin(frq))/ntaps)
+      tpwr = np.interp(np.log10(tfrq), np.log10(frq), pwr)
     else:
-      # make sure 0Hz has value 0.0
-      pwr[0] = 0.0
-    if frq[-1] != Fs/2:
-      # add (0Hz, 0.0)
-      frq = np.append(frq, Fs/2)
-      pwr = np.append(pwr, 0.0)
-    else:
-      # make sure Fs/2 has value 0.0
-      pwr[-1] = 0.0
+      tfrq = frq
+      tpwr = pwr
+
+    # convert dB to absolute values
+    tpwr = np.power(10, tpwr/20.0)  
+    
+    # add zero and Fs/2 frequencies with magnitude 0.0
+    tfrq = np.insert(tfrq, 0, 0.0)
+    tpwr = np.insert(tpwr, 0, 0.0)
+    tfrq = np.append(tfrq, Fs/2.0)
+    tpwr = np.append(tpwr, 0.0)
     
     # calculate the FIR filter via windowing method
-    fir = sig.firwin2(ntaps, frq, pwr, nyq = frq[-1])	
+    fir = sig.firwin2(ntaps, tfrq, tpwr, nyq = tfrq[-1])	
     # Minimum phase, zero padding	
     cp, outf = rceps(np.append(fir, np.zeros(len(minresp) - len(fir))))
       
@@ -383,10 +391,13 @@ def main():
 					help="Trim leading silence")
 	parser.add_argument('--noplot', action='store_true', default = False,
 					help="Do not polt the filter") 	 					  
+	parser.add_argument('--nologint', action='store_true', 
+					help="Don't use logarithmic interpolation for target curve") 	 					  
 
 	args = parser.parse_args()
 
-	roomcomp(args.impresp, args.filter, args.target, args.ntaps, args.mixed, args.opformat, args.trim, args.nsthresh, args.noplot)
+	roomcomp(args.impresp, args.filter, args.target, args.ntaps, args.mixed, args.opformat, 
+	         args.trim, args.nsthresh, args.noplot, args.nologint)
 
 if __name__=="__main__":
     main()  
