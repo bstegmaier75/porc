@@ -99,7 +99,7 @@ def mad(a, c=Gaussian.ppf(3/4.), axis=0):  # c \approx .6745
     return np.median((np.fabs(a))/c, axis=axis)
     
 def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthresh, noplot,
-             nologint):
+             nologint, osmooth):
 
   print "Loading impulse response"
   
@@ -300,9 +300,7 @@ def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthre
     # original loudspeaker-room response
     tfplot(data, Fs, avg = 'abs')
     # 1/3 Octave smoothed
-    tfplots(data, Fs, 'r')
-
-    #tfplot(mixed, Fs, 'r')
+    tfplots(data, Fs, 'r', osmooth)
 
     # equalizer transfer function
     tfplot(0.75*equalizer, Fs, 'g')
@@ -312,7 +310,7 @@ def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthre
     # equalized loudspeaker-room response
     tfplot(equalizedresp*0.01, Fs, avg = 'abs')
     # 1/3 Octave smoothed
-    tfplots(equalizedresp*0.01, Fs, 'r')
+    tfplots(equalizedresp*0.01, Fs, 'r', osmooth)
     # target
     tfplot(outf*0.01, Fs, color='g')
 
@@ -393,11 +391,13 @@ def main():
 					help="do not plot the filter") 	 					  
 	parser.add_argument('--nologint', action='store_true', 
 					help="do not use logarithmic interpolation for target curve") 	 					  
+	parser.add_argument('--osmooth', dest='osmooth', default = 3,
+					help="use 1/x octave smoothing [default = 3]", type=int) 	 					  
 
 	args = parser.parse_args()
 
 	roomcomp(args.impresp, args.filter, args.target, args.ntaps, args.mixed, args.opformat, 
-	         args.trim, args.nsthresh, args.noplot, args.nologint)
+	         args.trim, args.nsthresh, args.noplot, args.nologint, args.osmooth)
 
 if __name__=="__main__":
     main()  
