@@ -155,10 +155,27 @@ def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthre
     
     # load target file
     t = np.loadtxt(target)
-    frq = t[:,0]; pwr = t[:,1]
+    frq = t[:,0]
+    pwr = np.power(10, t[:,1]/20.0)
+    
+    # add zero and Fs/2 frequencies if not yet contained in the target curve
+    if frq[0] != 0.0:
+      # add (0Hz, 0.0)
+      frq = np.insert(frq, 0, 0.0)
+      pwr = np.insert(pwr, 0, 0.0)
+    else:
+      # make sure 0Hz has value 0.0
+      pwr[0] = 0.0
+    if frq[-1] != Fs/2:
+      # add (0Hz, 0.0)
+      frq = np.append(frq, Fs/2)
+      pwr = np.append(pwr, 0.0)
+    else:
+      # make sure Fs/2 has value 0.0
+      pwr[-1] = 0.0
     
     # calculate the FIR filter via windowing method
-    fir = sig.firwin2(501, frq, np.power(10, pwr/20.0), nyq = frq[-1])	
+    fir = sig.firwin2(ntaps, frq, pwr, nyq = frq[-1])	
     # Minimum phase, zero padding	
     cp, outf = rceps(np.append(fir, np.zeros(len(minresp) - len(fir))))
       
