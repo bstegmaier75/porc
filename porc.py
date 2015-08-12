@@ -167,7 +167,7 @@ def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthre
       
     # logarithmic interpolation of target curve using ntaps frequency values
     if not nologint:
-      tfrq = np.arange(np.amin(frq), np.amax(frq), (np.amax(frq)-np.amin(frq))/ntaps)
+      tfrq = np.arange(np.amin(frq), np.amax(frq), (np.amax(frq)-np.amin(frq))/len(minresp))
       tpwr = np.interp(np.log10(tfrq), np.log10(frq), pwr)
     else:
       tfrq = frq
@@ -183,7 +183,7 @@ def roomcomp(impresp, filter, target, ntaps, mixed_phase, opformat, trim, nsthre
     tpwr = np.append(tpwr, 0.0)
     
     # calculate the FIR filter via windowing method
-    fir = sig.firwin2(ntaps, tfrq, tpwr, nyq = tfrq[-1])	
+    fir = sig.firwin2(len(minresp), tfrq, tpwr, nyq = tfrq[-1])
     # Minimum phase, zero padding	
     cp, outf = rceps(np.append(fir, np.zeros(len(minresp) - len(fir))))
       
